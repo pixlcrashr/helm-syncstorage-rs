@@ -1,0 +1,235 @@
+# Default values for syncstorage-rs.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  # The image variant is chosen automatically based on database.type
+  # (syncserver-postgres / syncserver-mysql). Override only to use a custom
+  # or mirrored image.
+  repository: ""
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: syncstorage.example.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: syncstorage-example-local-tls
+  #    hosts:
+  #      - syncstorage.example.local
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+# The server can take a while to run database migrations on first start.
+startupProbe:
+  httpGet:
+    path: /__lbheartbeat__
+    port: http
+  periodSeconds: 10
+  failureThreshold: 18
+
+# /__lbheartbeat__ does not query the database but reports 500 when the
+# connection pool is exhausted (deadman switch); /__heartbeat__ actually
+# checks the database connection. Note that /__heartbeat__ only covers the
+# syncstorage database - the tokenserver has its own heartbeat handler,
+# which is only exposed in tokenserver-only deployments.
+livenessProbe:
+  httpGet:
+    path: /__lbheartbeat__
+    port: http
+
+readinessProbe:
+  httpGet:
+    path: /__heartbeat__
+    port: http
+
+# DNS suffix of the cluster, used when composing in-cluster URLs.
+clusterDomain: cluster.local
+
+# Server bind address and port (SYNC_HOST / SYNC_PORT).
+config:
+  host: 0.0.0.0
+  port: 8000
+
+# Secret used for cryptographic operations (SYNC_MASTER_SECRET).
+# Set either masterSecret or masterSecretExistingSecret, not both.
+masterSecret: ""
+masterSecretExistingSecret: ""
+masterSecretExistingSecretKey: master-secret
+
+database:
+  # Database engine used by syncstorage-rs: "postgres" or "mysql".
+  # Selects the matching server image variant and the URL scheme of the
+  # composed database URLs. When one of the bundled databases below is
+  # enabled, the engine follows it automatically.
+  type: postgres
+
+  # Full database connection URLs. Setting them makes the chart run without
+  # any bundled database; they take precedence over the bundled database
+  # subcharts below.
+  # Examples:
+  #   postgres://sync:secret@my-postgres.my-namespace.svc.cluster.local:5432/syncstorage
+  #   mysql://sync:secret@my-mysql.my-namespace.svc.cluster.local:3306/syncstorage
+  # Syncstorage and Tokenserver may share a single database (the official
+  # default for Postgres); for MySQL separate databases are recommended -
+  # set tokenserverDatabaseUrl then.
+  syncstorageDatabaseUrl: ""
+  tokenserverDatabaseUrl: ""
+
+  # Overrides the database host of composed URLs. Only relevant when
+  # overriding the bundled databases' naming (e.g. their fullnameOverride);
+  # external databases are configured via the URLs above.
+  host: ""
+
+  # Read the connection URLs from an existing Secret instead. Takes
+  # precedence over the values above and the bundled database subcharts.
+  existingSecret: ""
+  existingSecretSyncstorageKey: syncstorage-database-url
+  existingSecretTokenserverKey: tokenserver-database-url
+
+tokenserver:
+  enabled: true
+  # Run the Tokenserver schema migrations on startup
+  # (SYNC_TOKENSERVER__RUN_MIGRATIONS).
+  runMigrations: true
+  # Email domain used to identify users' Firefox Accounts
+  # (SYNC_TOKENSERVER__FXA_EMAIL_DOMAIN). Keep the default for regular
+  # Firefox clients, which authenticate against Mozilla's production FxA;
+  # match it to your FxA environment (stage or self-hosted) otherwise.
+  fxaEmailDomain: api.accounts.firefox.com
+  # URL of the FxA OAuth server used to verify the OAuth tokens presented
+  # by syncing clients (SYNC_TOKENSERVER__FXA_OAUTH_SERVER_URL). Keep the
+  # default for regular Firefox clients; point it at your own FxA
+  # environment otherwise.
+  fxaOauthServerUrl: https://oauth.accounts.firefox.com
+  # Storage node URL advertised to clients (SYNC_TOKENSERVER__INIT_NODE_URL).
+  # Defaults to the public ingress URL when enabled, otherwise to the
+  # in-cluster service URL. Point this at a publicly reachable URL when
+  # syncing from outside the cluster.
+  initNodeUrl: ""
+
+# Additional environment variables for the server container, for example:
+#  - name: RUST_LOG
+#    value: info
+#  - name: SENTRY_DSN
+#    valueFrom:
+#      secretKeyRef:
+#        name: sentry
+#        key: dsn
+extraEnv: []
+
+# Bundled PostgreSQL database (bitnami/postgresql). Disabled by default -
+# configure database.* above to run against an external database instead.
+# When enabled, syncstorage and tokenserver share a single database.
+postgresql:
+  enabled: false
+  fullnameOverride: ""
+  auth:
+    username: syncstorage
+    # Must be set when the bundled database is enabled (or provide
+    # database.syncstorageDatabaseUrl instead).
+    password: ""
+    database: syncstorage
+
+# Bundled MySQL database (bitnami/mysql). Disabled by default - configure
+# database.* above to run against an external database instead.
+# MySQL uses separate databases for syncstorage and tokenserver; the extra
+# "tokenserver" database is created by an init container before the server
+# starts.
+mysql:
+  enabled: false
+  fullnameOverride: ""
+  auth:
+    rootPassword: ""
+    username: syncstorage
+    # Must be set when the bundled database is enabled (or provide
+    # database.syncstorageDatabaseUrl instead).
+    password: ""
+    database: syncstorage
+  # Name of the additional database created for Tokenserver.
+  tokenserverDatabase: tokenserver
+  image:
+    # The bitnami/mysql chart references docker.io/bitnami/mysql, which no
+    # longer carries pullable tags since the Bitnami catalog changes of
+    # August 2025; the last published MySQL images live in bitnamilegacy.
+    # Remove this override if you use Bitnami Secure Images or your own
+    # mirror.
+    registry: docker.io
+    repository: bitnamilegacy/mysql
+    tag: 9.4.0-debian-12-r1
+  # The syncstorage schema requires MySQL with explicit defaults for
+  # timestamp columns (see the upstream docker-compose.one-shot.mysql.yaml);
+  # the bitnami/mysql default my.cnf already sets
+  # explicit_defaults_for_timestamp.
+
+# Additional volumes on the output Deployment definition.
+volumes: []
+# - name: foo
+#   secret:
+#     secretName: mysecret
+#     optional: false
+
+# Additional volumeMounts on the output Deployment definition.
+volumeMounts: []
+# - name: foo
+#   mountPath: "/etc/foo"
+#   readOnly: true
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

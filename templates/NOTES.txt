@@ -1,0 +1,38 @@
+syncstorage-rs has been deployed to namespace "{{ .Release.Namespace }}".
+
+The server listens on port {{ .Values.config.port }} and serves the
+Tokenserver API under /1.0/sync/1.5. It is healthy once
+  curl http://<address>:{{ .Values.service.port }}/__heartbeat__
+returns OK.
+
+{{- if .Values.ingress.enabled }}
+
+1. Access the server via the configured ingress:
+{{- range $host := .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ with .paths }}{{ (first .).path }}{{ end }}
+{{- end }}
+{{- else if contains "NodePort" .Values.service.type }}
+
+1. Access the server via a node port:
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "syncstorage-rs.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.service.type }}
+
+1. Access the server via the load balancer (it may take a few minutes for the IP to be available):
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "syncstorage-rs.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ .Values.service.port }}
+{{- else }}
+
+1. Access the server by port-forwarding to your machine:
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "syncstorage-rs.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:{{ .Values.config.port }}
+{{- end }}
+
+2. Point Firefox at your server by setting the following key in about:config
+   and restarting the browser:
+   identity.sync.tokenserver.uri = {{ include "syncstorage-rs.initNodeUrl" . }}/1.0/sync/1.5
+
+   The URL above is the storage node URL registered with Tokenserver
+   (SYNC_TOKENSERVER__INIT_NODE_URL). When syncing from outside the cluster,
+   set tokenserver.initNodeUrl to a publicly reachable address.

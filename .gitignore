@@ -1,0 +1,3 @@
+# Helm chart packaging artifacts (Chart.lock is committed, dependencies are not)
+charts/
+*.tgz

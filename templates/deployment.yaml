@@ -1,0 +1,146 @@
+{{- include "syncstorage-rs.checks" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "syncstorage-rs.fullname" . }}
+  labels:
+    {{- include "syncstorage-rs.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "syncstorage-rs.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "syncstorage-rs.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "syncstorage-rs.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.mysql.enabled }}
+      initContainers:
+        # MySQL requires separate databases for syncstorage and tokenserver.
+        # The bundled bitnami/mysql chart only creates the syncstorage
+        # database, so create the tokenserver database and grant access
+        # before the server starts (idempotent).
+        - name: tokenserver-db-init
+          image: "{{ .Values.mysql.image.registry }}/{{ .Values.mysql.image.repository }}:{{ .Values.mysql.image.tag }}"
+          imagePullPolicy: {{ .Values.mysql.image.pullPolicy | default "IfNotPresent" }}
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              echo "Waiting for MySQL at ${MYSQL_HOST}:${MYSQL_PORT} ..."
+              until /opt/bitnami/mysql/bin/mysqladmin ping -h "${MYSQL_HOST}" -P "${MYSQL_PORT}" -uroot -p"${MYSQL_ROOT_PASSWORD}" --silent; do
+                sleep 2
+              done
+              /opt/bitnami/mysql/bin/mysql -h "${MYSQL_HOST}" -P "${MYSQL_PORT}" -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "CREATE DATABASE IF NOT EXISTS \`{{ .Values.mysql.tokenserverDatabase }}\`; GRANT ALL PRIVILEGES ON \`{{ .Values.mysql.tokenserverDatabase }}\`.* TO '{{ .Values.mysql.auth.username | replace "'" "''" }}'@'%'; FLUSH PRIVILEGES;"
+              echo "Tokenserver database ready."
+          env:
+            - name: MYSQL_HOST
+              value: {{ include "syncstorage-rs.mysql.host" . | quote }}
+            - name: MYSQL_PORT
+              value: {{ .Values.mysql.primary.service.ports.mysql | default 3306 | quote }}
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "syncstorage-rs.mysql.secretName" . }}
+                  key: mysql-root-password
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ include "syncstorage-rs.image" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: SYNC_HOST
+              value: {{ .Values.config.host | quote }}
+            - name: SYNC_PORT
+              value: {{ .Values.config.port | quote }}
+            - name: SYNC_MASTER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (include "syncstorage-rs.fullname" .) .Values.masterSecretExistingSecret }}
+                  key: {{ default "master-secret" .Values.masterSecretExistingSecretKey }}
+            {{- if .Values.database.existingSecret }}
+            - name: SYNC_SYNCSTORAGE__DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.existingSecretSyncstorageKey }}
+            - name: SYNC_TOKENSERVER__DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.existingSecretTokenserverKey }}
+            {{- else }}
+            - name: SYNC_SYNCSTORAGE__DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "syncstorage-rs.fullname" . }}
+                  key: syncstorage-database-url
+            - name: SYNC_TOKENSERVER__DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "syncstorage-rs.fullname" . }}
+                  key: tokenserver-database-url
+            {{- end }}
+            - name: SYNC_TOKENSERVER__ENABLED
+              value: {{ .Values.tokenserver.enabled | quote }}
+            - name: SYNC_TOKENSERVER__RUN_MIGRATIONS
+              value: {{ .Values.tokenserver.runMigrations | quote }}
+            - name: SYNC_TOKENSERVER__NODE_TYPE
+              value: {{ include "syncstorage-rs.databaseType" . | quote }}
+            - name: SYNC_TOKENSERVER__FXA_EMAIL_DOMAIN
+              value: {{ .Values.tokenserver.fxaEmailDomain | quote }}
+            - name: SYNC_TOKENSERVER__FXA_OAUTH_SERVER_URL
+              value: {{ .Values.tokenserver.fxaOauthServerUrl | quote }}
+            - name: SYNC_TOKENSERVER__INIT_NODE_URL
+              value: {{ include "syncstorage-rs.initNodeUrl" . | quote }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.config.port }}
+              protocol: TCP
+          startupProbe:
+            {{- toYaml .Values.startupProbe | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

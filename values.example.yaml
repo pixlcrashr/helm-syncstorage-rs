@@ -1,0 +1,95 @@
+# Example values for the syncstorage-rs Helm chart.
+#
+# Pick exactly ONE database mode below (leave the other two commented out),
+# replace every "change-me", and install with:
+#
+#   helm dependency update
+#   helm install syncstorage-rs . -f values.example.yaml
+#
+# The example ships with the bundled PostgreSQL enabled (mode A). See the
+# README for details on all modes.
+
+## Secret used for cryptographic operations (SYNC_MASTER_SECRET).
+## Generate one with: openssl rand -hex 32
+masterSecret: "change-me"
+
+## ---------------------------------------------------------------------------
+## Mode A: bundled PostgreSQL (enabled in this example)
+## Syncstorage and tokenserver share a single database.
+## ---------------------------------------------------------------------------
+postgresql:
+  enabled: true
+  auth:
+    username: syncstorage
+    password: "change-me"
+    database: syncstorage
+
+## ---------------------------------------------------------------------------
+## Mode B: bundled MySQL
+## Separate databases for syncstorage and tokenserver; the additional
+## "tokenserver" database is created by the chart automatically.
+## ---------------------------------------------------------------------------
+# mysql:
+#   enabled: true
+#   auth:
+#     rootPassword: "change-me"
+#     username: syncstorage
+#     password: "change-me"
+#     database: syncstorage
+
+## ---------------------------------------------------------------------------
+## Mode C: external database (no bundled dependency)
+## ---------------------------------------------------------------------------
+# database:
+#   type: postgres
+#   syncstorageDatabaseUrl: "postgres://sync:secret@my-postgres.my-namespace.svc.cluster.local:5432/syncstorage"
+#   # Optional; defaults to the syncstorage URL (shared database). For MySQL
+#   # use a separate database, e.g.:
+#   #   "mysql://sync:secret@my-mysql.my-namespace.svc.cluster.local:3306/tokenserver"
+#   tokenserverDatabaseUrl: ""
+
+## ---------------------------------------------------------------------------
+## Public exposure. The first ingress host doubles as the default
+## tokenserver.initNodeUrl, so this is all that is needed to make clients
+## receive a publicly reachable storage node URL.
+## ---------------------------------------------------------------------------
+# ingress:
+#   enabled: true
+#   className: nginx
+#   annotations:
+#     # kubernetes.io/tls-acme: "true"
+#   hosts:
+#     - host: sync.example.com
+#       paths:
+#         - path: /
+#           pathType: Prefix
+#   tls:
+#     - secretName: sync-example-com-tls
+#       hosts:
+#         - sync.example.com
+
+## Storage node URL advertised to clients (SYNC_TOKENSERVER__INIT_NODE_URL).
+## Defaults to the ingress URL when ingress is enabled, otherwise to the
+## in-cluster service URL. Set it explicitly when syncing from outside the
+## cluster without an ingress, e.g.:
+# tokenserver:
+#   initNodeUrl: "https://sync.example.com"
+
+## Resource requests/limits (recommended for production).
+# resources:
+#   limits:
+#     cpu: 500m
+#     memory: 256Mi
+#   requests:
+#     cpu: 100m
+#     memory: 128Mi
+
+## Additional environment variables, e.g. logging or error reporting:
+# extraEnv:
+#   - name: RUST_LOG
+#     value: info
+#   - name: SENTRY_DSN
+#     valueFrom:
+#       secretKeyRef:
+#         name: sentry
+#         key: dsn

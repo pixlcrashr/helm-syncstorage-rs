@@ -1,0 +1,38 @@
+apiVersion: v2
+name: syncstorage-rs
+description: Mozilla Sync storage server (syncstorage-rs) for self-hosting Firefox Sync
+type: application
+
+# This is the chart version. This version number should be incremented each time you make changes
+# to the chart and its templates, including the app version.
+# Versions are expected to follow Semantic Versioning (https://semver.org/)
+version: 0.1.0
+
+# This is the version number of the application being deployed. It matches the
+# syncstorage-rs release tag, which is also the container image tag on ghcr.io.
+appVersion: "0.24.1"
+
+home: https://github.com/mozilla-services/syncstorage-rs
+sources:
+  - https://github.com/pixlcrashr/helm-syncstorage-rs
+keywords:
+  - mozilla
+  - firefox
+  - sync
+  - syncstorage
+  - tokenserver
+maintainers:
+  - name: pixlcrashr
+
+# Optional bundled databases. Both are disabled by default - syncstorage-rs
+# can be pointed at any external database via database.* values instead.
+# Enable at most one of them.
+dependencies:
+  - name: postgresql
+    version: 18.12.18
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+  - name: mysql
+    version: 14.0.3
+    repository: https://charts.bitnami.com/bitnami
+    condition: mysql.enabled
